@@ -1,0 +1,28 @@
+apiVersion: oadp.openshift.io/v1alpha1
+kind: DataProtectionApplication
+metadata:
+  name: dpa
+  namespace: openshift-adp
+spec:
+  configuration:
+    restic:
+      enable: true
+    velero:
+      defaultPlugins:
+        - azure
+        - openshift
+  backupLocations:
+    - velero:
+        config:
+          resourceGroup: 
+          storageAccount: 
+          subscriptionId: 
+          storageAccountKeyEnvVar: AZURE_STORAGE_ACCOUNT_ACCESS_KEY
+        credential:
+          key: cloud
+          name: cloud-credentials-azure
+        provider: azure
+        default: true
+        objectStorage:
+          bucket: bucket
+          prefix: velero

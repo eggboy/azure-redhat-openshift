@@ -1,0 +1,19 @@
+apiVersion: integreatly.org/v1alpha1
+kind: Grafana
+metadata:
+  name: my-grafana
+  namespace: grafana-operator
+spec:
+  config:
+    security:
+      admin_user: admin
+      admin_password: my-password
+  dataStorage:
+    accessModes:
+      - ReadWriteOnce
+    class: gp2
+    size: 1Gi
+  ingress:
+    enabled: true
+    tls:
+      enabled: true
