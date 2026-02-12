@@ -17,6 +17,7 @@ Available Commands:
         show            shows cluster information and credentials
         check-deps      checks if required dependencies are installed
         download-ext    downloads and installs ARO preview extension
+        assign-roles    assigns role assignments for managed identities
 "
 
 # Default configuration
@@ -474,6 +475,7 @@ exec_case() {
     show) show ;;
     check-deps) checkDependencies ;;
     download-ext) downloadExtension ;;
+    assign-roles) assignRoles ;;
     validateQuota) validateQuota ;;
     *) usage ;;
   esac
