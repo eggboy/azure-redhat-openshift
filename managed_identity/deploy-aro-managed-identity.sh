@@ -2,11 +2,6 @@
 # shfmt -i 2 -ci -w
 set -e
 
-# Requirements:
-# - Azure CLI (>= 2.67.0)
-# - ARO preview extension
-# - jq
-
 __usage="
 Available Commands:
     [-x  action]        action to be executed.
@@ -17,13 +12,13 @@ Available Commands:
         show            shows cluster information and credentials
         check-deps      checks if required dependencies are installed
         download-ext    downloads and installs ARO preview extension
-        assign-roles    assigns role assignments for managed identities
+        prepare-mi      creates managed identities and assigns roles
 "
 
 # Default configuration
-LOCATION=${LOCATION:-southeastasia}
-RESOURCEGROUP=${RESOURCEGROUP:-aro-rg}
-CLUSTER=${CLUSTER:-cluster}
+LOCATION=${LOCATION:-malaysiawest}
+RESOURCEGROUP=${RESOURCEGROUP:-sandbox-rg}
+CLUSTER=${CLUSTER:-mbb-sandbox-aro}
 CLUSTER_VERSION=${CLUSTER_VERSION:-4.19.20}
 PULL_SECRET_FILE=${PULL_SECRET_FILE:-pull-secret.txt}
 
@@ -444,21 +439,32 @@ selectAroVersion() {
   fi
 }
 
-install() {
-  checkDependencies
-  downloadExtension
-  registerProviders
-  validateQuota
-  createResourceGroup
-  createVirtualNetwork
+prepareMI() {
+  log "Preparing managed identities and role assignments..."
   createManagedIdentities
 
   log "Waiting 30 seconds for managed identity propagation..."
   sleep 30
 
+  assignRoles
+  log "Managed identities preparation completed!"
+}
+
+install() {
+  checkDependencies
+  downloadExtension
+  registerProviders
+  validateQuota
+  # createResourceGroup
+  # createVirtualNetwork
+  # createManagedIdentities
+  prepareMI
+  log "Waiting 30 seconds for managed identity propagation..."
+  sleep 30
+
   selectAroVersion
 
-  assignRoles
+  # assignRoles
   createCluster
 
   log ""
@@ -475,7 +481,7 @@ exec_case() {
     show) show ;;
     check-deps) checkDependencies ;;
     download-ext) downloadExtension ;;
-    assign-roles) assignRoles ;;
+    prepare-mi) prepareMI ;;
     validateQuota) validateQuota ;;
     *) usage ;;
   esac
