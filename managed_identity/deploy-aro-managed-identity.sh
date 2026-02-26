@@ -17,8 +17,8 @@ Available Commands:
 
 # Default configuration
 LOCATION=${LOCATION:-malaysiawest}
-RESOURCEGROUP=${RESOURCEGROUP:-sandbox-rg}
-CLUSTER=${CLUSTER:-mbb-sandbox-aro}
+RESOURCEGROUP=${RESOURCEGROUP:-rg-aro}
+CLUSTER=${CLUSTER:-sandbox-aro}
 CLUSTER_VERSION=${CLUSTER_VERSION:-4.19.20}
 PULL_SECRET_FILE=${PULL_SECRET_FILE:-pull-secret.txt}
 
@@ -335,6 +335,7 @@ createCluster() {
   # Create the cluster
   az aro create \
     --resource-group "$RESOURCEGROUP" \
+    --cluster-resource-group "$RESOURCEGROUP-cluster" \
     --name "$CLUSTER" \
     --vnet aro-vnet \
     --master-subnet master \
@@ -404,7 +405,7 @@ destroy() {
   for identity in ${_IDENTITIES}; do
     if az identity show --resource-group "$RESOURCEGROUP" --name "$identity" >/dev/null 2>&1; then
       log "  Deleting identity: $identity"
-      az identity delete --resource-group "$RESOURCEGROUP" --name "$identity"
+      az identity delete --resource-group "$RESOURCEGROUP" --name "$identity" --yes
     fi
   done
 
@@ -455,9 +456,9 @@ install() {
   downloadExtension
   registerProviders
   validateQuota
-  # createResourceGroup
-  # createVirtualNetwork
-  # createManagedIdentities
+  createResourceGroup
+  createVirtualNetwork
+  createManagedIdentities
   prepareMI
   log "Waiting 30 seconds for managed identity propagation..."
   sleep 30
