@@ -5,6 +5,9 @@ set -e
 __usage="
 Available Commands:
     [-x  action]        action to be executed.
+    [-y]                auto-approve (skip confirmation prompts)
+    [-A  visibility]    API server visibility (Public or Private, default: Public)
+    [-I  visibility]    Ingress visibility (Public or Private, default: Public)
 
     Possible verbs are:
         install         creates ARO cluster with managed identities
@@ -13,6 +16,16 @@ Available Commands:
         check-deps      checks if required dependencies are installed
         download-ext    downloads and installs ARO preview extension
         prepare-mi      creates managed identities and assigns roles
+
+    Examples:
+        # Create a fully private ARO cluster
+        $0 -x install -A Private -I Private
+
+        # Destroy without confirmation prompts
+        $0 -x destroy -y
+
+        # Create private API with public ingress
+        $0 -x install -A Private -I Public
 "
 
 # Default configuration
@@ -21,6 +34,11 @@ RESOURCEGROUP=${RESOURCEGROUP:-rg-aro}
 CLUSTER=${CLUSTER:-sandbox-aro}
 CLUSTER_VERSION=${CLUSTER_VERSION:-4.19.20}
 PULL_SECRET_FILE=${PULL_SECRET_FILE:-pull-secret.txt}
+
+# Parameters (set via command-line options)
+AUTO_APPROVE=false
+APISERVER_VISIBILITY="Public"
+INGRESS_VISIBILITY="Public"
 
 usage() {
   echo "usage: ${0##*/} [options]"
@@ -332,10 +350,16 @@ createCluster() {
     log "Pull secret file not found: $PULL_SECRET_FILE (cluster will be created without pull secret)"
   fi
 
+  # Log cluster visibility configuration
+  log "API Server Visibility: $APISERVER_VISIBILITY"
+  log "Ingress Visibility: $INGRESS_VISIBILITY"
+  if [[ "$APISERVER_VISIBILITY" == "Private" ]] || [[ "$INGRESS_VISIBILITY" == "Private" ]]; then
+    log "Creating PRIVATE ARO cluster"
+  fi
+
   # Create the cluster
   az aro create \
     --resource-group "$RESOURCEGROUP" \
-    --cluster-resource-group "$RESOURCEGROUP-cluster" \
     --name "$CLUSTER" \
     --vnet aro-vnet \
     --master-subnet master \
@@ -343,6 +367,8 @@ createCluster() {
     --version "$CLUSTER_VERSION" \
     --master-vm-size Standard_D8as_v5 \
     --worker-vm-size Standard_D8as_v5 \
+    --apiserver-visibility "$APISERVER_VISIBILITY" \
+    --ingress-visibility "$INGRESS_VISIBILITY" \
     --enable-managed-identity \
     --assign-cluster-identity aro-cluster \
     --assign-platform-workload-identity file-csi-driver file-csi-driver \
@@ -390,10 +416,16 @@ show() {
 destroy() {
   log "Destroying ARO cluster and associated resources..."
 
+  # Prepare yes flag based on AUTO_APPROVE setting
+  YES_FLAG=""
+  if [[ "$AUTO_APPROVE" == "true" ]]; then
+    YES_FLAG="--yes"
+  fi
+
   # Delete the cluster
   if az aro show --name "$CLUSTER" --resource-group "$RESOURCEGROUP" >/dev/null 2>&1; then
     log "Deleting ARO cluster $CLUSTER"
-    az aro delete --name "$CLUSTER" --resource-group "$RESOURCEGROUP" --yes
+    az aro delete --name "$CLUSTER" --resource-group "$RESOURCEGROUP" $YES_FLAG
   else
     log "Cluster $CLUSTER not found, skipping cluster deletion"
   fi
@@ -405,13 +437,13 @@ destroy() {
   for identity in ${_IDENTITIES}; do
     if az identity show --resource-group "$RESOURCEGROUP" --name "$identity" >/dev/null 2>&1; then
       log "  Deleting identity: $identity"
-      az identity delete --resource-group "$RESOURCEGROUP" --name "$identity" --yes
+      az identity delete --resource-group "$RESOURCEGROUP" --name "$identity" $YES_FLAG
     fi
   done
 
   # Delete the entire resource group
   log "Deleting resource group $RESOURCEGROUP"
-  az group delete --name "$RESOURCEGROUP" --yes --no-wait
+  az group delete --name "$RESOURCEGROUP" $YES_FLAG --no-wait
 
   log "Destruction completed"
 }
@@ -489,11 +521,28 @@ exec_case() {
   unset _opt
 }
 
-while getopts "x:" opt; do
+while getopts "x:yA:I:" opt; do
   case $opt in
     x)
       exec_flag=true
       EXEC_OPT="${OPTARG}"
+      ;;
+    y)
+      AUTO_APPROVE=true
+      ;;
+    A)
+      APISERVER_VISIBILITY="${OPTARG}"
+      if [[ "$APISERVER_VISIBILITY" != "Public" && "$APISERVER_VISIBILITY" != "Private" ]]; then
+        echo "Error: -A must be either 'Public' or 'Private'"
+        exit 1
+      fi
+      ;;
+    I)
+      INGRESS_VISIBILITY="${OPTARG}"
+      if [[ "$INGRESS_VISIBILITY" != "Public" && "$INGRESS_VISIBILITY" != "Private" ]]; then
+        echo "Error: -I must be either 'Public' or 'Private'"
+        exit 1
+      fi
       ;;
     *) usage ;;
   esac
