@@ -30,7 +30,8 @@ This script automates the deployment of Azure Red Hat OpenShift clusters using m
 ### Main Options
 
 - `-x <action>` - Action to execute (required)
-  - `install` - Creates ARO cluster with managed identities
+  - `install` - Creates ARO cluster with managed identities (full setup)
+  - `install-aro-only` - Creates ARO cluster only (assumes prerequisites already done)
   - `destroy` - Deletes ARO cluster and associated resources
   - `show` - Shows cluster information and credentials
   - `check-deps` - Checks if required dependencies are installed
@@ -109,6 +110,23 @@ Delete all resources without confirmation prompts (useful for automation):
 LOCATION=westus2 RESOURCEGROUP=aro-prod-rg CLUSTER=production-cluster \
   ./deploy-aro-managed-identity.sh -x install -A Private -I Private
 ```
+
+### Recreate Cluster with Existing Infrastructure
+
+If you need to recreate the cluster but already have the resource group, virtual network, and managed identities set up:
+
+```bash
+# Only create the ARO cluster (assumes prerequisites are already in place)
+./deploy-aro-managed-identity.sh -x install-aro-only
+
+# Or with custom visibility settings
+./deploy-aro-managed-identity.sh -x install-aro-only -A Private -I Private
+```
+
+This is useful when:
+- Recreating a cluster after deletion while keeping the infrastructure
+- Testing different cluster configurations
+- You've already run `prepare-mi` and want to create the cluster later
 
 ## What Gets Created
 
