@@ -11,6 +11,7 @@ Available Commands:
 
     Possible verbs are:
         install         creates ARO cluster with managed identities
+        install-aro-only creates ARO cluster only (assumes prerequisites already done)
         destroy         deletes ARO cluster and associated resources
         show            shows cluster information and credentials
         check-deps      checks if required dependencies are installed
@@ -483,6 +484,15 @@ prepareMI() {
   log "Managed identities preparation completed!"
 }
 
+installAroOnly() {
+  selectAroVersion
+  createCluster
+
+  log ""
+  log "ARO cluster creation completed!"
+  log "Run '$0 -x show' to get cluster information and credentials"
+}
+
 install() {
   checkDependencies
   downloadExtension
@@ -510,6 +520,7 @@ exec_case() {
 
   case ${_opt} in
     install) install ;;
+    install-aro-only) installAroOnly ;;
     destroy) destroy ;;
     show) show ;;
     check-deps) checkDependencies ;;
