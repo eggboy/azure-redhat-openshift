@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # shfmt -i 2 -ci -w
-set -e
+set -euo pipefail
+
+trap 'printf "\nInterrupted. Exiting...\n" >&2; exit 130' INT
 
 __usage="
 Available Commands:
@@ -10,13 +12,14 @@ Available Commands:
     [-I  visibility]    Ingress visibility (Public or Private, default: Public)
 
     Possible verbs are:
-        install         creates ARO cluster with managed identities
+        install          creates ARO cluster with managed identities
         install-aro-only creates ARO cluster only (assumes prerequisites already done)
-        destroy         deletes ARO cluster and associated resources
-        show            shows cluster information and credentials
-        check-deps      checks if required dependencies are installed
-        download-ext    downloads and installs ARO preview extension
-        prepare-mi      creates managed identities and assigns roles
+        destroy          deletes ARO cluster and associated resources
+        show             shows cluster information and credentials
+        check-deps       checks if required dependencies are installed
+        download-ext     downloads and installs ARO preview extension
+        prepare-mi       creates managed identities and assigns roles
+        validate-quota   validates compute quota requirements
 
     Examples:
         # Create a fully private ARO cluster
@@ -30,7 +33,7 @@ Available Commands:
 "
 
 # Default configuration
-LOCATION=${LOCATION:-malaysiawest}
+LOCATION=${LOCATION:-indonesiacentral}
 RESOURCEGROUP=${RESOURCEGROUP:-rg-aro}
 CLUSTER=${CLUSTER:-sandbox-aro}
 CLUSTER_VERSION=${CLUSTER_VERSION:-4.19.20}
@@ -40,6 +43,8 @@ PULL_SECRET_FILE=${PULL_SECRET_FILE:-pull-secret.txt}
 AUTO_APPROVE=false
 APISERVER_VISIBILITY="Public"
 INGRESS_VISIBILITY="Public"
+exec_flag=false
+EXEC_OPT=""
 
 usage() {
   echo "usage: ${0##*/} [options]"
@@ -59,7 +64,7 @@ timestamp() {
 }
 
 log() {
-  echo "[$(timestamp)] $*"
+  echo "[$(timestamp)] $*" >&2
 }
 
 checkDependencies() {
@@ -238,6 +243,7 @@ assignRoles() {
 
   for identity in ${_OPERATOR_IDENTITIES}; do
     log "  Assigning cluster identity permissions to $identity"
+    # Role: Managed Identity Operator (ef318e2a-8334-4a05-9e4a-295a196c6a6e)
     az role assignment create \
       --assignee-object-id "$CLUSTER_PRINCIPAL_ID" \
       --assignee-principal-type ServicePrincipal \
@@ -249,6 +255,7 @@ assignRoles() {
   log "  Assigning network permissions to operators..."
 
   # Cloud Controller Manager - master and worker subnets
+  # Role: ARO Cloud Controller Manager (a1f96423-95ce-4224-ab27-4e3dc72facd4)
   CCM_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name cloud-controller-manager --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$CCM_PRINCIPAL_ID" \
@@ -263,6 +270,7 @@ assignRoles() {
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCEGROUP/providers/Microsoft.Network/virtualNetworks/aro-vnet/subnets/worker"
 
   # Ingress - master and worker subnets
+  # Role: ARO Ingress (0336e1d3-7a87-462b-b6db-342b63f7802c)
   INGRESS_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name ingress --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$INGRESS_PRINCIPAL_ID" \
@@ -277,6 +285,7 @@ assignRoles() {
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCEGROUP/providers/Microsoft.Network/virtualNetworks/aro-vnet/subnets/worker"
 
   # Machine API - master and worker subnets
+  # Role: ARO Machine API (0358943c-7e01-48ba-8889-02cc51d78637)
   MACHINE_API_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name machine-api --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$MACHINE_API_PRINCIPAL_ID" \
@@ -291,6 +300,7 @@ assignRoles() {
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCEGROUP/providers/Microsoft.Network/virtualNetworks/aro-vnet/subnets/worker"
 
   # Cloud Network Config - vnet level
+  # Role: ARO Cloud Network Config (be7a6435-15ae-4171-8f30-4a343eff9e8f)
   CLOUD_NET_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name cloud-network-config --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$CLOUD_NET_PRINCIPAL_ID" \
@@ -299,6 +309,7 @@ assignRoles() {
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCEGROUP/providers/Microsoft.Network/virtualNetworks/aro-vnet"
 
   # File CSI Driver - vnet level
+  # Role: ARO File CSI Driver (0d7aedc0-15fd-4a67-a412-efad370c947e)
   FILE_CSI_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name file-csi-driver --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$FILE_CSI_PRINCIPAL_ID" \
@@ -307,6 +318,7 @@ assignRoles() {
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCEGROUP/providers/Microsoft.Network/virtualNetworks/aro-vnet"
 
   # Image Registry - vnet level
+  # Role: ARO Image Registry (8b32b316-c2f5-4ddf-b05b-83dacd2d08b5)
   IMAGE_REG_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name image-registry --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$IMAGE_REG_PRINCIPAL_ID" \
@@ -315,6 +327,7 @@ assignRoles() {
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCEGROUP/providers/Microsoft.Network/virtualNetworks/aro-vnet"
 
   # ARO Operator - master and worker subnets
+  # Role: ARO Operator (4436bae4-7702-4c84-919b-c4069ff25ee2)
   ARO_OP_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name aro-operator --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$ARO_OP_PRINCIPAL_ID" \
@@ -328,7 +341,8 @@ assignRoles() {
     --role "/subscriptions/$SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/4436bae4-7702-4c84-919b-c4069ff25ee2" \
     --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCEGROUP/providers/Microsoft.Network/virtualNetworks/aro-vnet/subnets/worker"
 
-  # First-party service principal role assignment
+  # First-party RP service principal
+  # Role: Network Contributor (4d97b98b-1d4f-4787-a291-c67834d212e7)
   ARO_RP_SP_OBJECT_ID=$(az ad sp list --display-name "Azure Red Hat OpenShift RP" --query '[0].id' -o tsv)
   az role assignment create \
     --assignee-object-id "$ARO_RP_SP_OBJECT_ID" \
@@ -343,12 +357,12 @@ createCluster() {
   log "Creating ARO cluster with managed identities..."
 
   # Prepare pull secret parameter
-  PULL_SECRET_PARAM=""
-  if [[ -f "$PULL_SECRET_FILE" ]]; then
-    log "Using pull secret from $PULL_SECRET_FILE"
-    PULL_SECRET_PARAM="--pull-secret @$PULL_SECRET_FILE"
+  PULL_SECRET_ARGS=()
+  if [[ -f "${PULL_SECRET_FILE}" ]]; then
+    log "Using pull secret from ${PULL_SECRET_FILE}"
+    PULL_SECRET_ARGS=(--pull-secret "@${PULL_SECRET_FILE}")
   else
-    log "Pull secret file not found: $PULL_SECRET_FILE (cluster will be created without pull secret)"
+    log "Pull secret file not found: ${PULL_SECRET_FILE} (cluster will be created without pull secret)"
   fi
 
   # Log cluster visibility configuration
@@ -380,7 +394,7 @@ createCluster() {
     --assign-platform-workload-identity cloud-network-config cloud-network-config \
     --assign-platform-workload-identity aro-operator aro-operator \
     --assign-platform-workload-identity disk-csi-driver disk-csi-driver \
-    $PULL_SECRET_PARAM
+    ${PULL_SECRET_ARGS[@]+"${PULL_SECRET_ARGS[@]}"}
 
   log "ARO cluster created successfully"
 }
@@ -418,17 +432,17 @@ destroy() {
   log "Destroying ARO cluster and associated resources..."
 
   # Prepare yes flag based on AUTO_APPROVE setting
-  YES_FLAG=""
-  if [[ "$AUTO_APPROVE" == "true" ]]; then
-    YES_FLAG="--yes"
+  YES_ARGS=()
+  if [[ "${AUTO_APPROVE}" == "true" ]]; then
+    YES_ARGS=(--yes)
   fi
 
   # Delete the cluster
-  if az aro show --name "$CLUSTER" --resource-group "$RESOURCEGROUP" >/dev/null 2>&1; then
-    log "Deleting ARO cluster $CLUSTER"
-    az aro delete --name "$CLUSTER" --resource-group "$RESOURCEGROUP" $YES_FLAG
+  if az aro show --name "${CLUSTER}" --resource-group "${RESOURCEGROUP}" >/dev/null 2>&1; then
+    log "Deleting ARO cluster ${CLUSTER}"
+    az aro delete --name "${CLUSTER}" --resource-group "${RESOURCEGROUP}" ${YES_ARGS[@]+"${YES_ARGS[@]}"}
   else
-    log "Cluster $CLUSTER not found, skipping cluster deletion"
+    log "Cluster ${CLUSTER} not found, skipping cluster deletion"
   fi
 
   # Delete managed identities
@@ -436,15 +450,15 @@ destroy() {
   _IDENTITIES="aro-cluster cloud-controller-manager ingress machine-api disk-csi-driver cloud-network-config image-registry file-csi-driver aro-operator"
 
   for identity in ${_IDENTITIES}; do
-    if az identity show --resource-group "$RESOURCEGROUP" --name "$identity" >/dev/null 2>&1; then
-      log "  Deleting identity: $identity"
-      az identity delete --resource-group "$RESOURCEGROUP" --name "$identity" $YES_FLAG
+    if az identity show --resource-group "${RESOURCEGROUP}" --name "${identity}" >/dev/null 2>&1; then
+      log "  Deleting identity: ${identity}"
+      az identity delete --resource-group "${RESOURCEGROUP}" --name "${identity}" ${YES_ARGS[@]+"${YES_ARGS[@]}"}
     fi
   done
 
   # Delete the entire resource group
-  log "Deleting resource group $RESOURCEGROUP"
-  az group delete --name "$RESOURCEGROUP" $YES_FLAG --no-wait
+  log "Deleting resource group ${RESOURCEGROUP}"
+  az group delete --name "${RESOURCEGROUP}" ${YES_ARGS[@]+"${YES_ARGS[@]}"} --no-wait
 
   log "Destruction completed"
 }
@@ -500,14 +514,8 @@ install() {
   validateQuota
   createResourceGroup
   createVirtualNetwork
-  createManagedIdentities
   prepareMI
-  log "Waiting 30 seconds for managed identity propagation..."
-  sleep 30
-
   selectAroVersion
-
-  # assignRoles
   createCluster
 
   log ""
@@ -526,7 +534,7 @@ exec_case() {
     check-deps) checkDependencies ;;
     download-ext) downloadExtension ;;
     prepare-mi) prepareMI ;;
-    validateQuota) validateQuota ;;
+    validate-quota) validateQuota ;;
     *) usage ;;
   esac
   unset _opt
@@ -544,14 +552,14 @@ while getopts "x:yA:I:" opt; do
     A)
       APISERVER_VISIBILITY="${OPTARG}"
       if [[ "$APISERVER_VISIBILITY" != "Public" && "$APISERVER_VISIBILITY" != "Private" ]]; then
-        echo "Error: -A must be either 'Public' or 'Private'"
+        echo "Error: -A must be either 'Public' or 'Private'" >&2
         exit 1
       fi
       ;;
     I)
       INGRESS_VISIBILITY="${OPTARG}"
       if [[ "$INGRESS_VISIBILITY" != "Public" && "$INGRESS_VISIBILITY" != "Private" ]]; then
-        echo "Error: -I must be either 'Public' or 'Private'"
+        echo "Error: -I must be either 'Public' or 'Private'" >&2
         exit 1
       fi
       ;;
