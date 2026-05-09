@@ -221,9 +221,10 @@ createVirtualNetwork() {
 createManagedIdentities() {
   log "Creating managed identities..."
 
-  _IDENTITIES="aro-cluster cloud-controller-manager ingress machine-api disk-csi-driver cloud-network-config image-registry file-csi-driver aro-operator"
+  _IDENTITY_ROLES="aro-cluster cloud-controller-manager ingress machine-api disk-csi-driver cloud-network-config image-registry file-csi-driver aro-operator"
 
-  for identity in ${_IDENTITIES}; do
+  for role in ${_IDENTITY_ROLES}; do
+    local identity="id-${role}-${CLUSTER}"
     log "  Creating identity: $identity"
     az identity create --resource-group "$RESOURCEGROUP" --name "$identity"
   done
@@ -237,11 +238,12 @@ assignRoles() {
   SUBSCRIPTION_ID=$(az account show --query 'id' -o tsv)
 
   # Cluster identity permissions over other identities
-  CLUSTER_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name aro-cluster --query principalId -o tsv)
+  CLUSTER_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-aro-cluster-${CLUSTER}" --query principalId -o tsv)
 
-  _OPERATOR_IDENTITIES="aro-operator cloud-controller-manager ingress machine-api disk-csi-driver cloud-network-config image-registry file-csi-driver"
+  _OPERATOR_ROLES="aro-operator cloud-controller-manager ingress machine-api disk-csi-driver cloud-network-config image-registry file-csi-driver"
 
-  for identity in ${_OPERATOR_IDENTITIES}; do
+  for role in ${_OPERATOR_ROLES}; do
+    local identity="id-${role}-${CLUSTER}"
     log "  Assigning cluster identity permissions to $identity"
     # Role: Managed Identity Operator (ef318e2a-8334-4a05-9e4a-295a196c6a6e)
     az role assignment create \
@@ -256,7 +258,7 @@ assignRoles() {
 
   # Cloud Controller Manager - master and worker subnets
   # Role: ARO Cloud Controller Manager (a1f96423-95ce-4224-ab27-4e3dc72facd4)
-  CCM_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name cloud-controller-manager --query principalId -o tsv)
+  CCM_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-cloud-controller-manager-${CLUSTER}" --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$CCM_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -271,7 +273,7 @@ assignRoles() {
 
   # Ingress - master and worker subnets
   # Role: ARO Ingress (0336e1d3-7a87-462b-b6db-342b63f7802c)
-  INGRESS_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name ingress --query principalId -o tsv)
+  INGRESS_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-ingress-${CLUSTER}" --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$INGRESS_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -286,7 +288,7 @@ assignRoles() {
 
   # Machine API - master and worker subnets
   # Role: ARO Machine API (0358943c-7e01-48ba-8889-02cc51d78637)
-  MACHINE_API_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name machine-api --query principalId -o tsv)
+  MACHINE_API_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-machine-api-${CLUSTER}" --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$MACHINE_API_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -301,7 +303,7 @@ assignRoles() {
 
   # Cloud Network Config - vnet level
   # Role: ARO Cloud Network Config (be7a6435-15ae-4171-8f30-4a343eff9e8f)
-  CLOUD_NET_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name cloud-network-config --query principalId -o tsv)
+  CLOUD_NET_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-cloud-network-config-${CLUSTER}" --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$CLOUD_NET_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -310,7 +312,7 @@ assignRoles() {
 
   # File CSI Driver - vnet level
   # Role: ARO File CSI Driver (0d7aedc0-15fd-4a67-a412-efad370c947e)
-  FILE_CSI_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name file-csi-driver --query principalId -o tsv)
+  FILE_CSI_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-file-csi-driver-${CLUSTER}" --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$FILE_CSI_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -319,7 +321,7 @@ assignRoles() {
 
   # Image Registry - vnet level
   # Role: ARO Image Registry (8b32b316-c2f5-4ddf-b05b-83dacd2d08b5)
-  IMAGE_REG_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name image-registry --query principalId -o tsv)
+  IMAGE_REG_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-image-registry-${CLUSTER}" --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$IMAGE_REG_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -328,7 +330,7 @@ assignRoles() {
 
   # ARO Operator - master and worker subnets
   # Role: ARO Operator (4436bae4-7702-4c84-919b-c4069ff25ee2)
-  ARO_OP_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name aro-operator --query principalId -o tsv)
+  ARO_OP_PRINCIPAL_ID=$(az identity show --resource-group "$RESOURCEGROUP" --name "id-aro-operator-${CLUSTER}" --query principalId -o tsv)
   az role assignment create \
     --assignee-object-id "$ARO_OP_PRINCIPAL_ID" \
     --assignee-principal-type ServicePrincipal \
@@ -385,15 +387,15 @@ createCluster() {
     --apiserver-visibility "$APISERVER_VISIBILITY" \
     --ingress-visibility "$INGRESS_VISIBILITY" \
     --enable-managed-identity \
-    --assign-cluster-identity aro-cluster \
-    --assign-platform-workload-identity file-csi-driver file-csi-driver \
-    --assign-platform-workload-identity cloud-controller-manager cloud-controller-manager \
-    --assign-platform-workload-identity ingress ingress \
-    --assign-platform-workload-identity image-registry image-registry \
-    --assign-platform-workload-identity machine-api machine-api \
-    --assign-platform-workload-identity cloud-network-config cloud-network-config \
-    --assign-platform-workload-identity aro-operator aro-operator \
-    --assign-platform-workload-identity disk-csi-driver disk-csi-driver \
+    --assign-cluster-identity "id-aro-cluster-${CLUSTER}" \
+    --assign-platform-workload-identity file-csi-driver "id-file-csi-driver-${CLUSTER}" \
+    --assign-platform-workload-identity cloud-controller-manager "id-cloud-controller-manager-${CLUSTER}" \
+    --assign-platform-workload-identity ingress "id-ingress-${CLUSTER}" \
+    --assign-platform-workload-identity image-registry "id-image-registry-${CLUSTER}" \
+    --assign-platform-workload-identity machine-api "id-machine-api-${CLUSTER}" \
+    --assign-platform-workload-identity cloud-network-config "id-cloud-network-config-${CLUSTER}" \
+    --assign-platform-workload-identity aro-operator "id-aro-operator-${CLUSTER}" \
+    --assign-platform-workload-identity disk-csi-driver "id-disk-csi-driver-${CLUSTER}" \
     ${PULL_SECRET_ARGS[@]+"${PULL_SECRET_ARGS[@]}"}
 
   log "ARO cluster created successfully"
@@ -447,9 +449,10 @@ destroy() {
 
   # Delete managed identities
   log "Deleting managed identities..."
-  _IDENTITIES="aro-cluster cloud-controller-manager ingress machine-api disk-csi-driver cloud-network-config image-registry file-csi-driver aro-operator"
+  _IDENTITY_ROLES="aro-cluster cloud-controller-manager ingress machine-api disk-csi-driver cloud-network-config image-registry file-csi-driver aro-operator"
 
-  for identity in ${_IDENTITIES}; do
+  for role in ${_IDENTITY_ROLES}; do
+    local identity="id-${role}-${CLUSTER}"
     if az identity show --resource-group "${RESOURCEGROUP}" --name "${identity}" >/dev/null 2>&1; then
       log "  Deleting identity: ${identity}"
       az identity delete --resource-group "${RESOURCEGROUP}" --name "${identity}" ${YES_ARGS[@]+"${YES_ARGS[@]}"}

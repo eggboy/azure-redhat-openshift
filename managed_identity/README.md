@@ -137,16 +137,16 @@ The script creates the following Azure resources:
 - Master subnet (10.0.0.0/23) for control plane nodes
 - Worker subnet (10.0.2.0/23) for worker nodes
 
-### Managed Identities
-- `aro-cluster` - Main cluster identity
-- `cloud-controller-manager` - Manages cloud resources
-- `ingress` - Manages ingress controllers
-- `machine-api` - Manages machine sets
-- `disk-csi-driver` - Manages persistent disk volumes
-- `cloud-network-config` - Manages network configuration
-- `image-registry` - Manages internal image registry
-- `file-csi-driver` - Manages file share volumes
-- `aro-operator` - ARO-specific operations
+### Managed Identities (named per Azure CAF: `id-<role>-<cluster>`)
+- `id-aro-cluster-<cluster>` - Main cluster identity
+- `id-cloud-controller-manager-<cluster>` - Manages cloud resources
+- `id-ingress-<cluster>` - Manages ingress controllers
+- `id-machine-api-<cluster>` - Manages machine sets
+- `id-disk-csi-driver-<cluster>` - Manages persistent disk volumes
+- `id-cloud-network-config-<cluster>` - Manages network configuration
+- `id-image-registry-<cluster>` - Manages internal image registry
+- `id-file-csi-driver-<cluster>` - Manages file share volumes
+- `id-aro-operator-<cluster>` - ARO-specific operations
 
 ### ARO Cluster
 - OpenShift control plane (3 master nodes, Standard_D8as_v5)
